@@ -58,7 +58,7 @@ func TestPluginGetMore(t *testing.T) {
 	p := plugins.BuildPipeline([]plugins.Plugin{d}, func(_ context.Context, r *plugins.Request) (bson.D, error) {
 		switch r.Command.(type) {
 		case *command.Find:
-			r.CursorCache.GetCursor(cursorID)
+			r.CursorCache.GetCursor(cursorID, r.GetClientInfo())
 			return bson.D{
 				{"ok", 1},
 				{"cursor", bson.D{{"id", cursorID}}},

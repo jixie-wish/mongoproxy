@@ -365,7 +365,7 @@ func (p *AuthzPlugin) resourcesForCommand(r *plugins.Request, c command.Command)
 		}
 
 	case *command.GetMore:
-		cursorResources := r.CursorCache.GetCursor(cmd.CursorID).Map[contextKeyResources]
+		cursorResources := r.CursorCache.GetCursor(cmd.CursorID, r.GetClientInfo()).Map[contextKeyResources]
 		if cr, ok := cursorResources.(map[authzlib.AuthorizationMethod][]authzlib.Resource); ok {
 			return cr
 		}
@@ -592,7 +592,7 @@ func (p *AuthzPlugin) Process(ctx context.Context, r *plugins.Request, next plug
 	result, err := next(ctx, r)
 	if cursorIDRaw, ok := bsonutil.Lookup(result, "cursor", "id"); ok {
 		if cursorID, ok := cursorIDRaw.(int64); ok && cursorID > 0 {
-			r.CursorCache.GetCursor(cursorID).Map[contextKeyResources] = resourceMap
+			r.CursorCache.GetCursor(cursorID, r.GetClientInfo()).Map[contextKeyResources] = resourceMap
 		}
 	}
 

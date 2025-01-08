@@ -146,7 +146,7 @@ func (p *Proxy) handleOpQuery(ctx context.Context, cc *plugins.ClientConnection,
 				}
 
 				if cursorID, ok := bsonutil.Lookup(result, "cursor", "id"); ok {
-					p.GetCursor(cursorID.(int64)).CursorConsumed += len(v.(primitive.A))
+					p.GetCursor(cursorID.(int64), cc.GetClientInfo()).CursorConsumed += len(v.(primitive.A))
 				}
 
 				reply.Documents = []bson.D{{{"ok", 1}, {"result", v}}}
@@ -164,7 +164,7 @@ func (p *Proxy) handleOpQuery(ctx context.Context, cc *plugins.ClientConnection,
 			}
 			var cursorEntry *plugins.CursorCacheEntry
 			if cursorID, ok := bsonutil.Lookup(cursorData, "id"); ok {
-				cursorEntry = p.GetCursor(cursorID.(int64))
+				cursorEntry = p.GetCursor(cursorID.(int64), cc.GetClientInfo())
 			}
 			firstBatchRaw, ok := bsonutil.Lookup(cursorData, "firstBatch")
 			if ok {
@@ -283,7 +283,7 @@ func (p *Proxy) handleOpQuery(ctx context.Context, cc *plugins.ClientConnection,
 			}
 			var cursorEntry *plugins.CursorCacheEntry
 			if cursorID, ok := bsonutil.Lookup(cursorData, "id"); ok {
-				cursorEntry = p.GetCursor(cursorID.(int64))
+				cursorEntry = p.GetCursor(cursorID.(int64), cc.GetClientInfo())
 				reply.CursorID = cursorID.(int64)
 			}
 			firstBatchRaw, ok := bsonutil.Lookup(cursorData, "firstBatch")
@@ -318,7 +318,7 @@ func (p *Proxy) handleOpKillCursors(ctx context.Context, cc *plugins.ClientConne
 	if err == nil {
 		if bsonutil.Ok(result) {
 			for _, cursorID := range q.CursorIDs {
-				p.CloseCursor(cursorID)
+				p.CloseCursor(cursorID, request.GetClientInfo())
 			}
 		}
 	}
@@ -339,7 +339,7 @@ func (p *Proxy) handleOpGetMore(ctx context.Context, cc *plugins.ClientConnectio
 		Header: q.Header,
 	}
 
-	cursorEntry := p.GetCursor(q.CursorID)
+	cursorEntry := p.GetCursor(q.CursorID, cc.GetClientInfo())
 
 	result, err := p.HandleMongo(ctx, request, []primitive.E{
 		{Key: "getMore", Value: q.CursorID},
@@ -360,7 +360,7 @@ func (p *Proxy) handleOpGetMore(ctx context.Context, cc *plugins.ClientConnectio
 		if cursorID, ok := bsonutil.Lookup(cursorData, "id"); ok {
 			reply.CursorID = cursorID.(int64)
 			if cursorID.(int64) == 0 {
-				p.CloseCursor(cursorEntry.ID)
+				p.CloseCursor(cursorEntry.ID, request.GetClientInfo())
 			}
 		}
 		nextBatchRaw, ok := bsonutil.Lookup(cursorData, "nextBatch")

@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"net"
+	"strings"
 
 	"go.mongodb.org/mongo-driver/bson"
 
@@ -25,20 +26,22 @@ type Plugin interface {
 	Process(context.Context, *Request, PipelineFunc) (bson.D, error)
 }
 
-func NewCursorCacheEntry(id int64) *CursorCacheEntry {
+func NewCursorCacheEntry(id int64, clientInfo string) *CursorCacheEntry {
 	return &CursorCacheEntry{
 		ID:  id,
+		ClientInfo: clientInfo,
 		Map: map[interface{}]interface{}{},
 	}
 }
 
 type CursorCache interface {
-	GetCursor(cursorID int64) *CursorCacheEntry
-	CloseCursor(cursorID int64)
+	GetCursor(cursorID int64, clientInfo string) *CursorCacheEntry
+	CloseCursor(cursorID int64, clientInfo string)
 }
 
 type CursorCacheEntry struct {
 	ID             int64
+	ClientInfo     string
 	CursorConsumed int
 
 	// Map is storage that resets on cursor change
@@ -59,6 +62,10 @@ type Request struct {
 	Map map[string]interface{}
 }
 
+func (r *Request) GetClientInfo() string {
+	return r.CC.GetClientInfo()
+}
+
 func (r *Request) Close() {}
 
 func NewClientConnection() *ClientConnection {
@@ -77,12 +84,30 @@ type ClientConnection struct {
 	// Map is storage that resets on cursor change
 	Map map[interface{}]interface{}
 }
+func (c *ClientConnection) GetUsername() string {
+	var usernames []string
+	for _, identity := range c.Identities {
+		usernames = append(usernames, identity.User())
+	}
+	var username string
+	if len(usernames) > 0 {
+		username = strings.Join(usernames, ",")
+	} else {
+		username = "unknown"
+	}
+	return username
+}
 
 func (c *ClientConnection) GetAddr() string {
 	if c.Addr == nil {
 		return ""
 	}
 	return c.Addr.String()
+}
+
+func (c *ClientConnection) GetClientInfo() string {
+	//todo @jiapeng use username
+	return c.GetAddr()
 }
 
 func (c *ClientConnection) Close() {}
