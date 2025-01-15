@@ -10,6 +10,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +48,14 @@ var (
 		Name: "mongoproxy_client_message_total",
 		Help: "The total number of messages from clients",
 	}, []string{"opcode"})
+	clientCursorGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "mongoproxy_client_cursors_open",
+		Help: "The current number of open cursors",
+	}, []string{"clientInfo"})
+	clientCursorCounter = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "mongoproxy_client_cursors_total",
+		Help: "The total number of client cursors",
+	}, []string{"clientInfo"})
 
 	ErrServerClosed = errors.New("server closed")
 	SKIP_RECOVER    = false
@@ -91,17 +100,31 @@ func NewProxy(l net.Listener, cfg *config.Config) (*Proxy, error) {
 
 	// Set up cursorCache
 	p.cursorCache.SetTTL(p.cfg.IdleCursorTimeout) // default TTL -- config
-	p.cursorCache.SetLoaderFunction(func(key string) (interface{}, time.Duration, error) {
+	p.cursorCache.SetLoaderFunction(func(clientKey string) (interface{}, time.Duration, error) {
+		keys := strings.SplitN(clientKey, "_", 2)
+		if keys == nil || len(keys) != 2 {
+			return nil, time.Duration(0), errors.New("Illegal cursor key " + clientKey)
+		}
+		key := keys[0]
+		clientInfo := keys[1]
 		cursorID, err := strconv.ParseInt(key, 10, 64)
 		if err != nil {
 			return nil, time.Duration(0), err
 		}
+		clientCursorCounter.WithLabelValues(clientInfo).Inc()
+		clientCursorGauge.WithLabelValues(clientInfo).Inc()
 
-		return plugins.NewCursorCacheEntry(cursorID), time.Duration(0), nil
+		return plugins.NewCursorCacheEntry(cursorID, clientInfo), time.Duration(0), nil
 	})
 	// expiration handler to send killCursor commands
-	p.cursorCache.SetExpirationReasonCallback(func(key string, reason ttlcache.EvictionReason, value interface{}) {
-		logrus.Tracef("expire cursor %s", key)
+	p.cursorCache.SetExpirationReasonCallback(func(clientKey string, reason ttlcache.EvictionReason, value interface{}) {
+		logrus.Tracef("expire cursor %s", clientKey)
+		keys := strings.SplitN(clientKey, "_", 2)
+		if keys == nil || len(keys) != 2 {
+			return
+		}
+		key := keys[0]
+		clientInfo := keys[1]
 		i, err := strconv.ParseInt(key, 10, 64)
 		if err != nil {
 			return
@@ -114,6 +137,7 @@ func NewProxy(l net.Listener, cfg *config.Config) (*Proxy, error) {
 				{"cursors", primitive.A{i}},
 			})
 		}
+		clientCursorGauge.WithLabelValues(clientInfo).Dec()
 	})
 
 	return p, nil
@@ -138,8 +162,8 @@ type Proxy struct {
 	internalCC *plugins.ClientConnection
 }
 
-func (p *Proxy) GetCursor(cursorID int64) *plugins.CursorCacheEntry {
-	v, err := p.cursorCache.Get(strconv.FormatInt(cursorID, 10))
+func (p *Proxy) GetCursor(cursorID int64, clientInfo string) *plugins.CursorCacheEntry {
+	v, err := p.cursorCache.Get(strconv.FormatInt(cursorID, 10) + "_" + clientInfo)
 	if err == ttlcache.ErrNotFound {
 		panic("can't get cursor")
 	}
@@ -147,8 +171,8 @@ func (p *Proxy) GetCursor(cursorID int64) *plugins.CursorCacheEntry {
 	return v.(*plugins.CursorCacheEntry)
 }
 
-func (p *Proxy) CloseCursor(cursorID int64) {
-	p.cursorCache.Remove(strconv.FormatInt(cursorID, 10))
+func (p *Proxy) CloseCursor(cursorID int64, clientInfo string) {
+	p.cursorCache.Remove(strconv.FormatInt(cursorID, 10) + "_" + clientInfo)
 }
 
 func (p *Proxy) Addr() string {

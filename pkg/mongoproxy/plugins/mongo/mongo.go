@@ -302,7 +302,7 @@ func (p *MongoPlugin) Process(ctx context.Context, r *plugins.Request, next plug
 				if cursorID, ok := cursorIDRaw.(int64); ok && cursorID > 0 {
 					logrus.Tracef("Store cursor: %v %v", cursorID, cmdServer)
 					// TODO: TTL from cmd
-					r.CursorCache.GetCursor(cursorID).Map[contextKeyServer] = cmdServer
+					r.CursorCache.GetCursor(cursorID, r.GetClientInfo()).Map[contextKeyServer] = cmdServer
 				}
 			}
 		}
@@ -473,7 +473,7 @@ func (p *MongoPlugin) Process(ctx context.Context, r *plugins.Request, next plug
 		cmd.Database = ""
 
 		// TODO: move into runCommand?
-		v, ok := r.CursorCache.GetCursor(cmd.CursorID).Map[contextKeyServer]
+		v, ok := r.CursorCache.GetCursor(cmd.CursorID, r.GetClientInfo()).Map[contextKeyServer]
 		if !ok {
 			return mongoerror.CursorNotFound.ErrMessage("Cursor not found."), nil
 		}
@@ -482,7 +482,7 @@ func (p *MongoPlugin) Process(ctx context.Context, r *plugins.Request, next plug
 
 		if cursorIDRaw, ok := bsonutil.Lookup(result, "cursor", "id"); ok {
 			if cursorID, ok := cursorIDRaw.(int64); ok && cursorID == 0 {
-				r.CursorCache.CloseCursor(cmd.CursorID)
+				r.CursorCache.CloseCursor(cmd.CursorID, r.GetClientInfo())
 			}
 		}
 
@@ -522,7 +522,7 @@ func (p *MongoPlugin) Process(ctx context.Context, r *plugins.Request, next plug
 			if !ok {
 				return nil, fmt.Errorf("invalid cursorID")
 			}
-			v, ok := r.CursorCache.GetCursor(cursorID).Map[contextKeyServer]
+			v, ok := r.CursorCache.GetCursor(cursorID, r.GetClientInfo()).Map[contextKeyServer]
 			if !ok {
 				return mongoerror.CursorNotFound.ErrMessage("Cursor not found."), nil
 			}
